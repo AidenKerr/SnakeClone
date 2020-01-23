@@ -1,0 +1,490 @@
+(require spd/tags)
+(require 2htdp/universe)
+(require 2htdp/image)
+; 
+;                 SNAKE  GAME
+;                By Aiden Kerr
+; 
+;    A recreation of the classic snake game.     
+; 
+; 
+; 
+; 
+
+
+;; CONSTANTS
+
+(define SPEED 1)  ; not sure why you would want this to be anything other than 1
+                  ; also it will break the tests
+
+(define RATE 0.25) ; seconds per update
+
+(define BOXES 20)
+(define BOXSIZE 20)
+(define SCREENSIZE (* BOXES BOXSIZE))
+
+(define MTS (empty-scene SCREENSIZE SCREENSIZE))
+(define PIECE (square BOXSIZE "solid" "black"))
+(define FOOD  (square BOXSIZE "solid" "green"))
+
+;; DATA DEFINITIONS
+
+(@htdd Pos)
+(define-struct pos (x y))
+;; Pos is (make-pos Natural Natural)
+;; interp. the position of a single snake part
+;;         For snake parts, the Pos is for the center of the grid space
+
+
+(define (fn-for-pos p)
+  (... (pos-x p)
+       (pos-y p)))
+
+(define (fn-for-lop lop)
+  (cond [(empty? lop) (...)]
+        [else
+         (... (fn-for-pos (first lop))
+              (fn-for-lop (rest lop)))]))
+        
+
+(@htdd Dir)
+(define-struct dir (x y))
+;; Dir is (make-dir Number Number)
+;; interp. the direction (and potentially speed) of the snake
+
+(define LEFT  (make-dir (- SPEED) 0))
+(define RIGHT (make-dir    SPEED  0))
+(define UP    (make-dir 0 (- SPEED)))
+(define DOWN  (make-dir 0    SPEED))
+
+(define (fn-for-dir d)
+  (... (dir-x d)
+       (dir-y d)))
+
+(@htdd Snake)
+(define-struct snake (parts dir))
+;; Snake is (make-snake (listof Pos) Dir)
+;; interp. the positions of each part of the snake
+;;         the direction the snake is moving
+;; SNAKE HAS AT LEAST ONE PART
+
+(define S0 (make-snake (list (make-pos (+ (* 9 BOXSIZE) (/ BOXSIZE 2))
+                                       (+ (* 9 BOXSIZE) (/ BOXSIZE 2))))
+                       UP))
+(define S1 (make-snake (list (make-pos (/ BOXSIZE 2) (/ BOXSIZE 2))
+                             (make-pos (/ BOXSIZE 2)
+                                       (+ BOXSIZE (/ BOXSIZE 2)))
+                             (make-pos (+ BOXSIZE (/ BOXSIZE 2))
+                                       (+ BOXSIZE (/ BOXSIZE 2))))
+                       UP))
+(define S2 (make-snake (list (make-pos (+ (* 9 BOXSIZE) (/ BOXSIZE 2))
+                                       (+ (* 9 BOXSIZE) (/ BOXSIZE 2)))
+                             (make-pos (+ (* 10 BOXSIZE) (/ BOXSIZE 2))
+                                       (+ (* 9 BOXSIZE) (/ BOXSIZE 2)))
+                             (make-pos (+ (* 10 BOXSIZE) (/ BOXSIZE 2))
+                                       (+ (* 10 BOXSIZE) (/ BOXSIZE 2)))
+                             (make-pos (+ (* 10 BOXSIZE) (/ BOXSIZE 2))
+                                       (+ (* 11 BOXSIZE) (/ BOXSIZE 2)))
+                             (make-pos (+ (* 10 BOXSIZE) (/ BOXSIZE 2))
+                                       (+ (* 12 BOXSIZE) (/ BOXSIZE 2)))
+                             (make-pos (+ (* 11 BOXSIZE) (/ BOXSIZE 2))
+                                       (+ (* 12 BOXSIZE) (/ BOXSIZE 2)))
+                             (make-pos (+ (* 11 BOXSIZE) (/ BOXSIZE 2))
+                                       (+ (* 13 BOXSIZE) (/ BOXSIZE 2))))
+                       LEFT))
+
+
+(define (fn-for-snake s)
+  (... (fn-for-lop (snake-parts s))
+       (fn-for-dir (snake-dir s))))
+
+(@htdd Food)
+(define-struct food (x y))
+;; Food is (make-food Natural Natural)
+;; interp. position of a piece of food
+
+(define F1 (make-food (+ (* 5 BOXSIZE) (/ BOXSIZE 2))
+                      (+ (* 6 BOXSIZE) (/ BOXSIZE 2))))
+
+(@htdd Game)
+(define-struct game (snake food dead?))
+;; Game is (make-game Snake Food Boolean)
+;; interp. the game's snake, food position, and dead status
+
+(define G0 (make-game S0 F1 false))
+(define G1 (make-game S1 F1 false))
+(define G2 (make-game S2 F1 false))
+
+(define (fn-for-game g)
+  (... (fn-for-snake (game-snake g))
+       (fn-for-food (game-food g))))
+
+;; FUNCTIONS
+
+(@htdf main)
+(@signature Game -> Game)
+;; start the world with ... (main G0)
+
+(@template htdw-main)
+
+(define (main g)
+  (big-bang g                   ; Game
+    (on-tick   next-game RATE)  ; Game -> Game
+    (to-draw   render)          ; Game -> Image
+    (on-key    handle-key)))    ; Game KeyEvent -> Game
+
+(@htdf next-game)
+(@signature Game -> Game)
+;; produce the next game by moving the snake and eating the food
+
+(@template Game fn-composition)
+(define (next-game g)
+  (eat-food (check-death (next-snake g))))
+
+(@htdf next-snake)
+(@signature Game -> Game)
+;; update snake positions in game - head moves in Dir, rest follow
+
+;(define (move-snake g) g)
+
+(@template Game)
+(define (next-snake g)
+  (make-game (move-snake (game-snake g))
+             (game-food g)
+             (game-dead? g)))
+
+(@htdf move-snake)
+(@signature Snake -> Snake)
+;; update snake positions - head moves in Dir, rest follow
+
+(check-expect (move-snake (make-snake (list (make-pos (/ BOXSIZE 2)
+                                                      (/ BOXSIZE 2)))
+                                      DOWN))
+              (make-snake (list (make-pos (/ BOXSIZE 2)
+                                          (+ BOXSIZE (/ BOXSIZE 2))))
+                          DOWN))
+(check-expect (move-snake (make-snake (list (make-pos (/ BOXSIZE 2)
+                                                      (/ BOXSIZE 2))
+                                            (make-pos (+ BOXSIZE (/ BOXSIZE 2))
+                                                      (/ BOXSIZE 2)))
+                                      DOWN))
+              (make-snake (list (make-pos (/ BOXSIZE 2)
+                                          (+ BOXSIZE (/ BOXSIZE 2)))
+                                (make-pos (/ BOXSIZE 2)
+                                          (/ BOXSIZE 2)))
+                          DOWN))
+
+
+;(define (move-snake s) s)
+(@template Snake)
+(define (move-snake s)
+  (make-snake (move-parts (snake-parts s) (snake-dir s))
+              (snake-dir s)))
+
+(@htdf move-parts)
+(@signature (listof Pos) Dir -> (listof Pos))
+;; update all snake part positions
+
+;(define (move-parts lop d) lop)
+
+(@template (listof Pos) accumulator)
+(define (move-parts lop0 d)
+  ;; last is Pos ; position of previous piece of snake
+  (local [(define (fn-for-lop lop last)
+            (cond [(empty? lop) empty]
+                  [else
+                   (cons last
+                         (fn-for-lop (rest lop) (first lop)))]))
+          (define first-pos (move-pos (first lop0) d))]
+    (fn-for-lop lop0 first-pos)))
+
+
+(@htdf move-pos)
+(@signature Pos Dir -> Pos)
+;; move pos in given direction
+
+(@template Pos)
+(define (move-pos p d)
+  (make-pos (+ (pos-x p)
+               (* BOXSIZE (dir-x d)))
+            (+ (pos-y p)
+               (* BOXSIZE (dir-y d)))))
+
+(@htdf check-death)
+(@signature Game -> Game)
+;; die when snake hits wall or itself
+
+;(define (check-death g) g)
+
+(@template Game)
+(define (check-death g)
+  (if (crash? (game-snake g))
+      (make-game (game-snake g)
+                 (game-food g)
+                 true)
+      g))
+
+
+(@htdf crash?)
+(@signature Snake -> Boolean)
+;; Produce true if the snake crashes into the wall or itself
+
+(@template fn-composition)
+(define (crash? s)
+  (or (hit-wall? s)
+      (hit-self? s)))
+
+(@htdf hit-wall?)
+(@signature Snake -> Boolean)
+;; Produce true when snake hits the wall
+
+(@template Snake Pos)
+(define (hit-wall? s)
+  (local [(define head-pos (first (snake-parts s)))]
+    (or (< (pos-x head-pos) 0)
+        (< (pos-y head-pos) 0)
+        (> (pos-x head-pos) SCREENSIZE)
+        (> (pos-y head-pos) SCREENSIZE))))
+
+(@htdf hit-self?)
+(@signature Snake -> Boolean)
+;; Produce true when snake runs into itself
+
+(@template Snake)
+(define (hit-self? s)
+  (head-in-body? (snake-parts s)))
+
+(@htdf head-in-body?)
+(@signature (listof Pos) -> Boolean)
+;; Produce true if first pos is in same position as any other pos in given list
+
+(check-expect (head-in-body? (list (make-pos 100 200))) false)
+(check-expect (head-in-body? (list (make-pos 100 200)
+                                   (make-pos 200 100))) false)
+(check-expect (head-in-body? (list (make-pos 250 40)
+                                   (make-pos 250 40))) true)
+(check-expect (head-in-body? (list (make-pos 130 210)
+                                   (make-pos 200 100)
+                                   (make-pos 130 210))) true)
+(check-expect (head-in-body? (list (make-pos 1420 1699)
+                                   (make-pos 200 100)
+                                   (make-pos 222 333)
+                                   (make-pos 1420 1699))) true)
+(check-expect (head-in-body? (list (make-pos 1420 1699)
+                                   (make-pos 200 100)
+                                   (make-pos 222 333)
+                                   (make-pos 1421 1700))) false)
+
+
+(@template (listof Pos) encapsulated)
+(define (head-in-body? lop0)
+  (local [(define head (first lop0))
+          (define lop (rest lop0))
+          (define (fn-for-lop lop)
+            (cond [(empty? lop) false]
+                  [else
+                   (if (pos-equals? (first lop)
+                                    head)
+                       true
+                       (fn-for-lop (rest lop)))]))]
+    (fn-for-lop lop)))
+
+(@htdf pos-equals?)
+(@signature Pos Pos -> Boolean)
+;; Produce true if both positions are the same
+
+(@template Pos)
+(define (pos-equals? p1 p2)
+  (and (= (pos-x p1) (pos-x p2))
+       (= (pos-y p1) (pos-y p2))))
+
+(@htdf eat-food)
+(@signature Game -> Game)
+;; eat the food
+
+;(define (eat-food g) g)
+
+(@template Game)
+(define (eat-food g)
+  (if (eating? (game-snake g)
+               (game-food g))
+      (eat g)
+      g))
+
+(@htdf eating?)
+(@signature Snake Food -> Boolean)
+;; Produce true when snake head is on food piece
+
+(@template Snake Food)
+(define (eating? s f)
+  (local [(define head-pos (first (snake-parts s)))]
+    (and (= (pos-x head-pos)
+            (food-x f))
+         (= (pos-y head-pos)
+            (food-y f)))))
+
+(@htdf eat)
+(@signature Game -> Game)
+;; grow snake and replace food
+
+(@template fn-composition)
+(define (eat g)
+  (replace-food (grow g)))
+
+(@htdf grow)
+(@signature Game -> Game)
+;; Add piece to snake in game
+
+(@template Game)
+(define (grow g)
+  (make-game (grow-snake (game-snake g))
+             (game-food g)
+             (game-dead? g)))
+
+(@htdf grow-snake)
+(@signature Snake -> Snake)
+;; add piece to end of snake (even if off-screen)
+
+(@template Snake)
+(define (grow-snake s)
+  (make-snake (add-part (snake-parts s))
+              (snake-dir s)))
+
+(@htdf add-part)
+(@signature (listof Pos) -> (listof Pos))
+;; add part at end of list at same pos as last element
+
+;; This is breaking templates but it works
+(@template (listof Pos))
+(define (add-part lop)
+  (local [(define rev (reverse lop))]
+    (reverse (cons (first rev) rev))))
+
+(@htdf replace-food)
+(@signature Game -> Game)
+;; add new food piece to the game
+
+;(define (replace-food g) g)
+
+(@template Game)
+(define (replace-food g)
+  (make-game (game-snake g)
+             (new-food (game-food g))
+             (game-dead? g)))
+
+(@htdf new-food)
+(@signature Food -> Food)
+;; Create new food in random position
+
+(@template Food)
+(define (new-food f)
+  (make-food (+ (* BOXSIZE (random BOXES)) (/ BOXSIZE 2))
+             (+ (* BOXSIZE (random BOXES)) (/ BOXSIZE 2))))
+
+(@htdf render)
+(@signature Game -> Image)
+;; render the game with the snake parts in their positions
+
+;(define (render g) empty-image)
+
+(@template Game Food Snake)
+(define (render g)
+  (if (game-dead? g)
+      (gameover g)
+      (place-image FOOD
+                   (food-x (game-food g))
+                   (food-y (game-food g))
+                   (render-snake (game-snake g)))))
+
+(@htdf gameover)
+(@signature Game -> Image)
+;; render game over screen
+
+(@template Game Snake)
+(define (gameover g)
+  (local [(define SCORE
+            (string-append
+             "score: "
+             (number->string (- (length (snake-parts (game-snake g))) 1))))]
+    (place-image (above (text "GAME\nOVER" 25 "black")
+                        (text SCORE 15 "black"))
+                 (/ SCREENSIZE 2) (/ SCREENSIZE 4) MTS)))
+
+(@htdf render-snake)
+(@signature Snake -> Image)
+;; Render snake image
+
+(@template fn-composition)
+(define (render-snake s)
+  (render-parts (snake-parts s)))
+
+(@htdf render-parts)
+(@signature (listof Pos) -> Image)
+;; Render each snake part
+
+(@template (listof Pos))
+(define (render-parts lop)
+  (cond [(empty? lop) MTS]
+        [else
+         (render-part (first lop)
+                      (render-parts (rest lop)))]))
+
+(@htdf render-part)
+(@signature Pos Image -> Image)
+;; render a single snake part on image - draw PIECE in given Pos's gridspace
+
+(check-expect (render-part (make-pos (/ BOXSIZE 2) (/ BOXSIZE 2)) MTS)
+              (place-image PIECE (/ BOXSIZE 2) (/ BOXSIZE 2) MTS))
+(check-expect (render-part (make-pos (+ (* 4 BOXSIZE) (/ BOXSIZE 2))
+                                     (+ (* 3 BOXSIZE) (/ BOXSIZE 2))) MTS)
+              (place-image PIECE (+ (* 4 BOXSIZE) (/ BOXSIZE 2))
+                           (+ (* 3 BOXSIZE) (/ BOXSIZE 2)) MTS))
+
+;(define (render-part p img) img)
+
+(@template Pos)
+(define (render-part p img)
+  (place-image PIECE
+               (pos-x p) (pos-y p)
+               img))
+
+(@htdf render-food)
+(@signature Food Image -> Image)
+;; place food on given image
+
+(@template Food)
+(define (render-food f img)
+  (place-image FOOD
+               (food-x f) (food-y f)
+               img))
+
+(@htdf handle-key)
+(@signature Game KeyEvent -> Game)
+;; change direction of snake
+
+;(define (handle-key g ke) g)
+
+(@template KeyEvent)
+(define (handle-key g ke)
+  (cond [(key=? ke "left")  (change-dir g LEFT)]
+        [(key=? ke "right") (change-dir g RIGHT)]
+        [(key=? ke "up")    (change-dir g UP)]
+        [(key=? ke "down")  (change-dir g DOWN)]
+        [else g]))
+
+(@htdf change-dir)
+(@signature Game Dir -> Game)
+;; change direction of snake in game if it isn't in the opposite direction
+
+(@template Game encapsulated)
+(define (change-dir g d)
+  (local [(define parts (snake-parts (game-snake g)))
+          (define head (first parts))]
+    (if (and (> (length parts) 1)
+             (pos-equals? (move-pos head d)
+                          (second parts)))
+        g
+        (make-game (make-snake (snake-parts (game-snake g))
+                               d)
+                   (game-food g)
+                   (game-dead? g)))))
